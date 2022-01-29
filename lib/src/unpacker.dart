@@ -37,7 +37,7 @@ class Unpacker {
       v = null;
       _offset += 1;
     } else {
-      throw _formatException('bool', b);
+      throw _formatException('bool', b, _offset);
     }
     return v;
   }
@@ -80,7 +80,7 @@ class Unpacker {
       v = null;
       _offset += 1;
     } else {
-      throw _formatException('integer', b);
+      throw _formatException('integer', b, _offset);
     }
     return v;
   }
@@ -101,7 +101,7 @@ class Unpacker {
       v = null;
       _offset += 1;
     } else {
-      throw _formatException('double', b);
+      throw _formatException('double', b, _offset);
     }
     return v;
   }
@@ -135,7 +135,7 @@ class Unpacker {
       len = _d.getUint32(++_offset);
       _offset += 4;
     } else {
-      throw _formatException('String', b);
+      throw _formatException('String', b, _offset);
     }
     final data =
         Uint8List.view(_list.buffer, _list.offsetInBytes + _offset, len);
@@ -165,7 +165,7 @@ class Unpacker {
       len = _d.getUint32(++_offset);
       _offset += 4;
     } else {
-      throw _formatException('List length', b);
+      throw _formatException('List length', b, _offset);
     }
     return len;
   }
@@ -192,9 +192,14 @@ class Unpacker {
       len = _d.getUint32(++_offset);
       _offset += 4;
     } else {
-      throw _formatException('Map length', b);
+      throw _formatException('Map length', b, _offset);
     }
     return len;
+  }
+
+  Object? unpackExt8() {
+
+    return null; // TODO
   }
 
   /// Unpack value if packed value is binary or `null`.
@@ -217,7 +222,7 @@ class Unpacker {
       len = _d.getUint32(++_offset);
       _offset += 4;
     } else {
-      throw _formatException('Binary', b);
+      throw _formatException('Binary', b, _offset);
     }
     final data =
         Uint8List.view(_list.buffer, _list.offsetInBytes + _offset, len);
@@ -254,8 +259,10 @@ class Unpacker {
       return unpackList();
     } else if ((b & 0xF0) == 0x80 || b == 0xde || b == 0xdf) {
       return unpackMap();
+    } else if (b == 0xc7) {
+      return unpackExt8();
     } else {
-      throw _formatException('Unknown', b);
+      throw _formatException('Unknown', b, _offset);
     }
   }
 
@@ -279,6 +286,6 @@ class Unpacker {
     return {for (var i = 0; i < length; i++) _unpack(): _unpack()};
   }
 
-  Exception _formatException(String type, int b) => FormatException(
-      'Try to unpack $type value, but it\'s not an $type, byte = $b');
+  Exception _formatException(String type, int b, int offset) => FormatException(
+      'Try to unpack $type value, but it\'s not an $type, byte = $b, offset = $offset');
 }
