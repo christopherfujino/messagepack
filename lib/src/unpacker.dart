@@ -1,6 +1,10 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+abstract class ExtensionFactory {
+
+}
+
 /// Streaming API for unpacking (deserializing) data from msgpack binary format.
 ///
 /// unpackXXX methods returns value if it exist, or `null`.
@@ -10,10 +14,12 @@ import 'dart:typed_data';
 class Unpacker {
   /// Manipulates with provided [Uint8List] to sequentially unpack values.
   /// Use [Unpaker.fromList()] to unpack raw `List<int>` bytes.
-  Unpacker(this._list) : _d = ByteData.view(_list.buffer, _list.offsetInBytes);
+  Unpacker(this._list, {this.extensionFactory}) : _d = ByteData.view(_list.buffer, _list.offsetInBytes);
 
   ///Convenient
-  Unpacker.fromList(List<int> l) : this(Uint8List.fromList(l));
+  Unpacker.fromList(List<int> l, {ExtensionFactory? extensionFactory}) : this(Uint8List.fromList(l), extensionFactory: extensionFactory);
+
+  final ExtensionFactory? extensionFactory;
 
   final Uint8List _list;
   final ByteData _d;
@@ -197,9 +203,36 @@ class Unpacker {
     return len;
   }
 
-  Object? unpackExt8() {
+  /// Unpack an Ext 8-byte
+  ///
+  /// ext 8 stores an integer and a byte array whose length is upto (2^8)-1 bytes:
+  /// +--------+--------+--------+========+
+  /// |  0xc7  |XXXXXXXX|  type  |  data  |
+  /// +--------+--------+--------+========+
+  ///
+  /// where
+  /// * XXXXXXXX is a 8-bit unsigned integer which represents N
+  /// * YYYYYYYY_YYYYYYYY is a 16-bit big-endian unsigned integer which represents N
+  /// * ZZZZZZZZ_ZZZZZZZZ_ZZZZZZZZ_ZZZZZZZZ is a big-endian 32-bit unsigned integer which represents N
+  /// * N is a length of data
+  /// * type is a signed 8-bit signed integer
+  /// * type < 0 is reserved for future extension including 2-byte type information
+  List<int> unpackExt8(ExtensionFactory extensionFactory) {
+    print('unpacking ext8...'); // TODO remove
+    final int constant = _d.getUint8(_offset++);
+    assert(constant == 0xc7);
 
-    return null; // TODO
+    final int n = _d.getUint8(_offset++);
+
+    final int type = _d.getUint8(_offset++);
+    print('type is $type');
+
+    final List<int> buffer = <int>[-420];
+    for (int i = 0; i < n; i++) {
+      buffer.add(_d.getUint8(_offset++));
+    }
+
+    return buffer;
   }
 
   /// Unpack value if packed value is binary or `null`.
@@ -260,7 +293,11 @@ class Unpacker {
     } else if ((b & 0xF0) == 0x80 || b == 0xde || b == 0xdf) {
       return unpackMap();
     } else if (b == 0xc7) {
-      return unpackExt8();
+      if (extensionFactory != null) {
+        return unpackExt8(extensionFactory!);
+      } else {
+        throw const FormatException('Tried to unpack ext8 but no extensionFactory provided!');
+      }
     } else {
       throw _formatException('Unknown', b, _offset);
     }
