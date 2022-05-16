@@ -1,6 +1,10 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+enum ExtensionType {
+  window,
+}
+
 /// Streaming API for unpacking (deserializing) data from msgpack binary format.
 ///
 /// unpackXXX methods returns value if it exist, or `null`.
@@ -18,6 +22,8 @@ class Unpacker {
   final Uint8List _list;
   final ByteData _d;
   int _offset = 0;
+
+  int get offset => _offset;
 
   final _strCodec = const Utf8Codec();
 
@@ -164,6 +170,10 @@ class Unpacker {
     } else if (b == 0xdd) {
       len = _d.getUint32(++_offset);
       _offset += 4;
+      // NeoVim msg-pack RPC uses this as ext 8
+    } else if (b == 0xc7) {
+      len = _d.getUint8(++_offset);
+      _offset += 1;
     } else {
       throw _formatException('List length', b, _offset);
     }
@@ -197,9 +207,29 @@ class Unpacker {
     return len;
   }
 
-  Object? unpackExt8() {
+  // see //doc/extension_types.md
+  List<int> unpackExt8() {
+    final int id = _d.getUint8(_offset);
+    if (id != 0xc7) {
+      throw _formatException('ext 8', id, _offset);
+    }
+    // move pointer to length
+    _offset += 1;
+    final int len = _d.getUint8(_offset);
+    // increment to type
+    _offset += 1;
+    // extension type
+    final int type = _d.getUint8(_offset);
+    // TODO use type
 
-    return null; // TODO
+    _offset += 1;
+    final data = Uint8List.view(
+      _list.buffer,
+      _list.offsetInBytes + _offset,
+      len,
+    );
+    _offset += len;
+    return data.toList();
   }
 
   /// Unpack value if packed value is binary or `null`.
@@ -286,6 +316,10 @@ class Unpacker {
     return {for (var i = 0; i < length; i++) _unpack(): _unpack()};
   }
 
-  Exception _formatException(String type, int b, int offset) => FormatException(
-      'Try to unpack $type value, but it\'s not an $type, byte = $b, offset = $offset');
+  Exception _formatException(String type, int b, int offset) {
+    return FormatException(
+      'Failed trying to unpack $type value, value = '
+      '0x${b.toRadixString(16)}, offset = $offset',
+    );
+  }
 }
